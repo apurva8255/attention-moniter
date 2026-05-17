@@ -69,6 +69,9 @@ class MLModelTrainer:
         classifiers = self._get_classifiers()
         results = {}
         best_f1 = -1.0
+        
+        self._pending_cms = {}
+        self._pending_cms_norm = {}
 
         for name, clf in classifiers.items():
             try:
@@ -81,6 +84,11 @@ class MLModelTrainer:
                 f1 = f1_score(y_test, y_pred, average="weighted", zero_division=0)
 
                 cm = confusion_matrix(y_test, y_pred, labels=[0, 1, 2])
+                cm_norm = confusion_matrix(y_test, y_pred, labels=[0, 1, 2], normalize='true')
+                
+                self._pending_cms[name] = cm
+                self._pending_cms_norm[name] = cm_norm
+                
                 metrics = {
                     "model": name,
                     "accuracy": round(acc, 4),
@@ -95,7 +103,6 @@ class MLModelTrainer:
                     best_f1 = f1
                     self.best_model = clf
                     self.best_model_name = name
-                    self._pending_cm = (cm, name)
 
                 if callback:
                     callback(name, metrics)
@@ -111,7 +118,7 @@ class MLModelTrainer:
         self.comparison_results = list(results.values())
         self._save_comparison(self.comparison_results)
         self._save_best_model()
-        self._save_confusion_matrix()
+        self._save_confusion_matrices()
         self._is_trained = True
 
         print(f"[ML] Best model: {self.best_model_name} (F1={best_f1:.3f})")
@@ -130,18 +137,45 @@ class MLModelTrainer:
         if self.best_model is not None:
             joblib.dump(self.best_model, MODEL_PATH)
             joblib.dump(self.scaler, SCALER_PATH)
-            print(f"[ML] Saved best model → {MODEL_PATH}")
+            print(f"[ML] Saved best model -> {MODEL_PATH}")
 
-    def _save_confusion_matrix(self):
-        if not hasattr(self, '_pending_cm'):
+    def _save_confusion_matrices(self):
+        if not hasattr(self, '_pending_cms') or not self._pending_cms:
             return
-        cm, name = self._pending_cm
+        
         labels = ["Low", "Medium", "High"]
-        disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
-        disp.plot(cmap="Blues", colorbar=False)
-        plt.title(f"Confusion Matrix — {name}")
+        name = self.best_model_name
+        
+        # 1. Standard CM for Best Model
+        if name in self._pending_cms:
+            disp = ConfusionMatrixDisplay(confusion_matrix=self._pending_cms[name], display_labels=labels)
+            disp.plot(cmap="Blues", colorbar=False)
+            plt.title(f"Confusion Matrix — {name}")
+            plt.tight_layout()
+            plt.savefig("confusion_matrix.png", dpi=120)
+            plt.close()
+            
+            # 2. Normalized CM for Best Model
+            disp_norm = ConfusionMatrixDisplay(confusion_matrix=self._pending_cms_norm[name], display_labels=labels)
+            disp_norm.plot(cmap="Blues", colorbar=False, values_format=".2f")
+            plt.title(f"Normalized Confusion Matrix — {name}")
+            plt.tight_layout()
+            plt.savefig("confusion_matrix_normalized.png", dpi=120)
+            plt.close()
+
+        # 3. Per-Model Confusion Matrix
+        num_models = len(self._pending_cms)
+        fig, axes = plt.subplots(1, num_models, figsize=(4 * num_models, 4))
+        if num_models == 1:
+            axes = [axes]
+            
+        for ax, (model_name, cm) in zip(axes, self._pending_cms.items()):
+            disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
+            disp.plot(ax=ax, cmap="Blues", colorbar=False)
+            ax.set_title(model_name)
+            
         plt.tight_layout()
-        plt.savefig("confusion_matrix.png", dpi=120)
+        plt.savefig("confusion_matrix_all_models.png", dpi=120)
         plt.close()
 
     def load_model(self) -> bool:
