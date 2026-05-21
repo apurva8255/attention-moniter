@@ -48,6 +48,7 @@ class AttentionMonitorUI(ctk.CTk):
         self._alert_popup  = None
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.after(1000, self.load_existing_results)
 
     # ── UI Construction ────────────────────────────────────────────────────
 
@@ -423,7 +424,7 @@ class AttentionMonitorUI(ctk.CTk):
         self.after(0, lambda: self.train_status_lbl.configure(
             text=f"Trained: {model_name} · F1={metrics.get('f1_score', 0):.3f}"))
 
-    def _on_train_done(self, results: dict):
+    def _on_train_done(self, results: dict, show_log=True):
         def _update():
             self.train_btn.configure(state="normal", text="⚙ Train ML")
             self.train_progress.set(1.0)
@@ -449,9 +450,54 @@ class AttentionMonitorUI(ctk.CTk):
                     break
 
             self.model_dashboard.draw(result_list, best_cm, best_model_name)
-            self._log(f"✅ ML training complete. Best: {best_model_name}")
+            if show_log:
+                self._log(f"✅ ML training complete. Best: {best_model_name}")
+            else:
+                self._log(f"🧠 Loaded trained ML models. Best performance: {best_model_name}")
 
         self.after(0, _update)
+
+    def load_existing_results(self):
+        """Loads and displays pre-existing training results if they exist."""
+        results = self.controller.model_trainer.get_comparison_results()
+        if not results:
+            return
+
+        # Format results if loaded from CSV (keys and values are strings)
+        formatted_results = {}
+        for r in results:
+            name = r.get("model")
+            if not name:
+                continue
+            
+            # Reconstruct dict with floats/ints
+            try:
+                acc = float(r.get("accuracy", 0))
+                prec = float(r.get("precision", 0))
+                rec = float(r.get("recall", 0))
+                f1 = float(r.get("f1_score", 0))
+            except (ValueError, TypeError):
+                acc, prec, rec, f1 = 0.0, 0.0, 0.0, 0.0
+
+            cm = r.get("confusion_matrix")
+            if isinstance(cm, str):
+                import ast
+                try:
+                    cm = ast.literal_eval(cm)
+                except Exception:
+                    pass
+
+            formatted_results[name] = {
+                "model": name,
+                "accuracy": acc,
+                "precision": prec,
+                "recall": rec,
+                "f1_score": f1,
+                "confusion_matrix": cm
+            }
+
+        if formatted_results:
+            self._on_train_done(formatted_results, show_log=False)
 
     def _on_threshold_change(self, val):
         v = round(float(val))

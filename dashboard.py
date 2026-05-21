@@ -226,11 +226,14 @@ class AttentionDashboard:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class ModelComparisonDashboard:
-    """Switchable view: ML Bar Chart OR Confusion Matrix — not both at once."""
+    """Switchable view: ML Bar Chart OR Confusion Matrix for each model."""
 
     GRAPH_NAMES = [
         "📊 Model Comparison",
-        "🔢 Confusion Matrix",
+        "🔴 Naive Bayes CM",
+        "🟢 Random Forest CM",
+        "🔵 SVM CM",
+        "🟣 Logistic Regression CM",
     ]
 
     def __init__(self, parent_frame, width: int = 900, height: int = 340):
@@ -255,7 +258,7 @@ class ModelComparisonDashboard:
             btn = ctk.CTkButton(
                 nav,
                 text=name,
-                width=200,
+                width=155,
                 height=30,
                 corner_radius=8,
                 fg_color=NAV_ACTIVE if active else NAV_INACTIVE,
@@ -263,7 +266,7 @@ class ModelComparisonDashboard:
                 text_color=NAV_TXT_ON if active else NAV_TXT_OFF,
                 border_width=1,
                 border_color=BORDER,
-                font=ctk.CTkFont(size=11, weight="bold"),
+                font=ctk.CTkFont(size=10, weight="bold"),
                 command=lambda idx=i: self._switch_graph(idx),
             )
             btn.pack(side="left", padx=4, pady=4)
@@ -322,7 +325,9 @@ class ModelComparisonDashboard:
         if g == 0:
             self._draw_bar()
         else:
-            self._draw_cm()
+            model_names = ["Naive Bayes", "Random Forest", "SVM", "Logistic Regression"]
+            selected_model = model_names[g - 1]
+            self._draw_cm(selected_model)
 
     # ── Bar Chart ──────────────────────────────────────────────────────────
 
@@ -371,14 +376,20 @@ class ModelComparisonDashboard:
 
     # ── Confusion Matrix ───────────────────────────────────────────────────
 
-    def _draw_cm(self):
+    def _draw_cm(self, model_name: str):
         self.ax.cla()
         self.ax.set_facecolor(PANEL_BG)
         for spine in self.ax.spines.values():
             spine.set_color(BORDER)
 
-        if not self._best_cm:
-            self.ax.text(0.5, 0.5, "No confusion matrix available yet.",
+        cm = None
+        for r in self._results:
+            if r.get("model") == model_name:
+                cm = r.get("confusion_matrix")
+                break
+
+        if not cm:
+            self.ax.text(0.5, 0.5, f"No confusion matrix available for {model_name}.",
                          transform=self.ax.transAxes,
                          ha="center", va="center",
                          color=DIM_COLOR, fontsize=11)
@@ -386,7 +397,14 @@ class ModelComparisonDashboard:
             self.canvas.draw()
             return
 
-        cm_np  = np.array(self._best_cm)
+        if isinstance(cm, str):
+            import ast
+            try:
+                cm = ast.literal_eval(cm)
+            except Exception:
+                pass
+
+        cm_np  = np.array(cm)
         labels = ["Low", "Medium", "High"]
 
         disp = ConfusionMatrixDisplay(confusion_matrix=cm_np, display_labels=labels)
@@ -397,7 +415,8 @@ class ModelComparisonDashboard:
             text.set_color(TEXT_COLOR)
             text.set_fontsize(10)
 
-        self.ax.set_title(f"Confusion Matrix — {self._best_name}",
+        title_suffix = " (Best Model ⭐)" if model_name == self._best_name else ""
+        self.ax.set_title(f"Confusion Matrix — {model_name}{title_suffix}",
                           color=TEXT_COLOR, fontsize=10, fontweight="bold")
         self.ax.tick_params(colors=TEXT_COLOR, labelsize=9)
         self.ax.xaxis.label.set_color(TEXT_COLOR)

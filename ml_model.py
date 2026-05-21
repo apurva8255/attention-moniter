@@ -185,7 +185,21 @@ class MLModelTrainer:
                 self.best_model = joblib.load(MODEL_PATH)
                 self.scaler = joblib.load(SCALER_PATH)
                 self._is_trained = True
-                print("[ML] Loaded saved model.")
+                
+                # Retrieve best model name from comparison results
+                results = self.get_comparison_results()
+                if results:
+                    best_f1 = -1.0
+                    for r in results:
+                        try:
+                            f1 = float(r.get("f1_score", 0))
+                            if f1 > best_f1:
+                                best_f1 = f1
+                                self.best_model_name = r.get("model")
+                        except (ValueError, TypeError):
+                            pass
+                
+                print(f"[ML] Loaded saved model: {self.best_model_name}")
                 return True
             except Exception as e:
                 print(f"[ML] Load error: {e}")
